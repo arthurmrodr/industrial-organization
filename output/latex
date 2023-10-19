@@ -1,0 +1,19 @@
+
+% Table created by stargazer v.5.2.3 by Marek Hlavac, Social Policy Institute. E-mail: marek.hlavac at gmail.com
+% Date and time: sex, set 29, 2023 - 21:40:37
+\begin{table}[!htbp] \centering 
+  \caption{} 
+  \label{} 
+\begin{tabular}{@{\extracolsep{5pt}} ccccc} 
+\\[-1.8ex]\hline 
+\hline \\[-1.8ex] 
+ & Estimate & Std. Error & t value & Pr(\textgreater \textbar t\textbar ) \\ 
+\hline \\[-1.8ex] 
+(Intercept) & $$-$3.741$ & $2.733$ & $$-$1.369$ & $0.171$ \\ 
+preco\_media & $$-$0.001$ & $0.0002$ & $$-$2.759$ & $0.006$ \\ 
+combustivelFlex & $3.640$ & $1.668$ & $2.181$ & $0.029$ \\ 
+combustivelGasolina & $1.331$ & $1.452$ & $0.917$ & $0.359$ \\ 
+cc\_mediana & $$-$0.424$ & $1.467$ & $$-$0.289$ & $0.773$ \\ 
+\hline \\[-1.8ex] 
+\end{tabular} 
+\end{table} 

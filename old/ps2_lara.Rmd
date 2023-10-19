@@ -1,0 +1,356 @@
+---
+title: "Segunda Lista de Exercícios"
+author: Lara de Andrade Oliveira
+header-includes:
+  - \usepackage{indentfirst}
+  - \setlength{\parindent}{20pt}
+output:
+  pdf_document: default
+  html_document: default
+date: '17 de Outubro, 2022'
+fontsize: 12pt
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
+setwd("C:/Users/Lara/Documents/OI/PS2")
+library(dplyr)
+library(stringr)
+library(ggplot2)
+library(kableExtra)
+library(entrymodels)
+library(readxl)
+```
+
+# Exercício 1  
+  
+```{r, include=FALSE}
+
+#abrindo e arrumando base da estban (2019)
+estban <- read.csv("estban_2019_12.csv", header = FALSE, sep = ";") %>%
+  subset(select = c(5, 6, 7, 66)) %>%
+  rename(cnpj = V5, banco = V6, agencias = V7, cod_mun = V66)
+
+estban <- estban[-1,]
+estban$cod_uf <- substring(estban$cod_mun, 1, 2)
+estban$cod_mun <- substr(estban$cod_mun, 3, 7)
+estban$cod_mun <- str_remove(estban$cod_mun, "^0+")
+
+#abrindo e arrumando bases do ibge (2019)
+## população
+pop <- read.csv("pop_mun_2019.csv", header = FALSE, sep = ";") %>%
+  rename(uf = V1, cod_uf = V2, cod_mun = V3, munic = V4, populacao = V5)
+
+pop <- pop[-1,] 
+pop$populacao  <- as.numeric(pop$populacao)
+
+##pib
+pib <- read.csv("pib_mun_2019.csv", header = FALSE, sep = ";") %>%
+  subset(select = c(1,2,3,4,7,39)) %>%
+  rename(ano = V1, cod_reg = V2, nome_reg = V3, cod_uf = V4, cod_mun = V7, pib = V39)
+
+pib <- pib[-1,]
+pib <- filter(pib, ano == "2019")
+pib$pib <- as.numeric(pib$pib)
+pib$cod_mun <- substr(pib$cod_mun, 3, 7) 
+pib$cod_mun <- str_remove(pib$cod_mun, "^0+")
+
+#juntando os dataframes para ter agencias, população e pib
+df <- merge(pop, pib, by = c("cod_uf", "cod_mun"), all.x = TRUE)
+df <- merge(df, estban, by = c("cod_uf", "cod_mun"), all.x = TRUE)
+df$agencias <- as.numeric(df$agencias)
+df$pib_pc <- df$pib/df$pop
+
+df_ag <- subset(df, select = -c(ano, cod_reg, nome_reg, cnpj, banco)) %>%
+  group_by(munic, uf, cod_uf, cod_mun, populacao, pib, pib_pc)%>%
+  summarize(agencias = sum(agencias, na.rm = TRUE))
+
+df_ag <- subset(df_ag, select=c(2,1,3,4,5,8,6,7))
+
+```
+
+Para esse primeiro exercício, pegamos os dados de número de agências bancárias por município pelo site do ESTBAN, do Banco Central. Já para os dados de população estimada e PIB por município foram utilizadas as bases do IBGE. Aqui, foi escolhido o ano de 2019 por ser o ano mais recente com dado de PIB dos municípios. Com esses dados foi possível calcular o pib per capita de cada município. A seguir serão apresentadas algumas estatísticas descritivas dos dados.  
+  
+```{r, echo=FALSE}
+
+#visualizações
+
+##df pro grafico
+graf <- subset(df_ag, select = c(munic, populacao, agencias, pib))
+graf$ag_hb <- df_ag$agencias*100000/df_ag$populacao
+
+###grafico
+ggplot(graf, aes(x=ag_hb)) + geom_histogram() + 
+  labs(
+  title = "Figure 1: Agências a cada 100 mil habitantes",
+  subtitle = "2019",
+  x = "Agências/100mil habitantes",
+  y = "Municípios") +
+  theme_bw()
+
+##df por agencia
+df_0 <- df_ag %>%
+  group_by(agencias) %>%
+  summarize(populacao=mean(populacao, na.rm = TRUE), pib=mean(pib, na.rm = TRUE), pib_pc=mean(pib_pc, na.rm = TRUE))
+df_0 <- df_0[-c(82,83),]
+  
+###tabela
+#kable(df_0, col.names = c("Número de Agências", "Média da População", "Média do PIB", "Média do PIB PC"), caption = "Estatísticas por número de agências") %>%
+  #kable_styling(latex_options = "hold_position")
+
+
+###gráfico
+ggplot(df_0, aes(x=agencias, y=populacao/1000)) + geom_point() +
+  geom_smooth(method=lm, se=FALSE) +
+  labs(
+  title = "Figure 2: Média de população por número de agencia em cada cidade",
+  subtitle = "2019",
+  x = "Agências",
+  y = "Média da população dos municípios (em milhares)"
+  ) +
+  theme_bw()
+
+
+ggplot(df_0, aes(x=agencias, y=pib_pc/1000)) + geom_point() +
+  geom_smooth(method=lm, se=FALSE) +
+  labs(
+  title = "Figure 3: Média do PIB per capita por número de agencia em cada cidade",
+  subtitle = "2019",
+  x = "Agências",
+  y = "Média do PIB per capita dos munícpios (em milhares)"
+  ) +
+  theme_bw()
+```
+  
+Na figura 1, temos um gráfico que apresenta o número de agêcias a cada 100 mil habitantes e vemos que há uma grande quantidade de municípios com 0 agências. São Paulo, o maior município do país, tem pouco mais de 17 agências a cada 100 mil habitantes e o município com maior número de agência por 100 mil habitantes é Borá, com uma população estimada em 837 habitantes e uma agência (totalizando 119 agências a cada 100 mil habitantes).  
+  
+Montamos também um gráfico (figura 2) que apresenta a quantidade de agências pela média do total de população das cidades com aquele número de agências. Aqui foram excluídas as cidades de São Paulo e do Rio de Janeiro porque tinham número de gências e população muito acima e atrapalhavam a visualização dos demais dados.  Há uma maior concentração de cidades com poucas agências (menos de 50) e vemos que há uma tendência de cidades maiores terem mais agências, o que é esperado.  
+  
+Já a figura 3 monta a mesma relação só que para o PIB per capita. Aqui, já não vemos uma relação tão clara de crescimento do número de agências em relação ao PIB per capita, como tínhamos no gráfico anterior.
+  
+Podemos também analisar qual é o banco com maior número de agências no país para o ano analisado.  
+  
+```{r, echo=FALSE}
+bancos <- subset(df, select = -c(ano, cod_reg, nome_reg, cod_mun, cod_uf, uf, munic, populacao, pib, pib_pc)) %>%
+  group_by(banco) %>%
+  summarize(agencias = sum(agencias, na.rm = TRUE)) %>%
+  arrange(desc(agencias)) %>%
+  slice(1:5)
+
+ggplot(bancos, aes(x=reorder(banco,-agencias), y=agencias)) + geom_col() +
+  labs(
+  title = "Figure 4: Agências por banco",
+  subtitle = "Top 5 bancos",
+  x = "Banco",
+  y = "Número de Agências") +
+  theme_bw() +
+  scale_x_discrete(labels= c("BCO BRADESCO S.A."="Bradesco","BCO DO BRASIL S.A."="BB", "CAIXA ECONOMICA FEDERAL"="Caixa",
+                             "ITAÚ UNIBANCO S.A."="Itaú", "BCO SANTANDER (BRASIL) S.A."="Santander"))
+
+```
+  
+O gráfico mostra que o Bradesco é o Banco com maior número de Agências no país para o ano de 2019 (4474 agências), seguido pelo Banco do Brasil (com 4356 agências). Importante notar que o gráfico apresenta somente os 5 bancos com maior número de agências.  
+  
+# Exercício 2  
+  
+Vamos analisar os thresholds de população pelo número de agências. Na tabela 1 abaixo replicamos a tabela 2 de BR (90). Aqui, como no paper original, não conseguimos ver thresholds de população bem definidos para o número de entrantes, mas enquanto o problema deles era para $n$ alto, aqui temos problemas desde $n$ mais baixos. Por exemplo, para as sem entrantes, temos que 25% das cidades tem mais do que 9867,5 habitantes, em média, enquanto que para um entrante 75% das cidades têm mais que 6000 habitantes, em média. Assim, não conseguimos traçar um treshold claro de população para as cidades com 0, 1, 2 ou mais de 3 agências.  
+  
+É importante notar que em BR (90) os autores escolheram apenas cidades com menos de 10000 habitantes e isoladas seguindo dois crtérios: i)sem cidades com mais de 1000 pessoas em um raio de 25 milhas do centro da cidade observada; ii)sem grandes cidades em um raio de 125 milhas tal que a população da cidade dividida pela distância até a cidade analisada excedesse 600. Aqui, por outro lado, não impusemos ainda um limite de população e nem fizemos uma análise de cidades isoladas de outras maiores. Isso pode ser um fator causador dessa falta de treshold de popualção bem definido.  
+  
+```{r, echo=FALSE}
+
+df_ag$aux <- if_else(df_ag$agencias == 0, 'Sem entrantes',
+                        if_else(df_ag$agencias == 1, 'Monopólio', 
+                                if_else(df_ag$agencias == 2, 'Duopólio',
+                                        if_else(df_ag$agencias >= 3, 'Três ou mais','NA'))))
+
+tabela <- df_ag %>%
+  group_by(aux) %>%
+  summarise('Mínimo' = min(populacao),
+            '25%' = quantile(populacao,prob=.25),
+            '30%' = quantile(populacao,prob=.30),
+            '35%' = quantile(populacao,prob=.35),
+            'Mediana' = quantile(populacao,prob=.50),
+            '65%' = quantile(populacao,prob=.65),
+            '70%' = quantile(populacao,prob=.70),
+            '75%' = quantile(populacao,prob=.75),
+            'Máximo' = max(populacao)
+            )
+
+tabela <- tabela[c(3,2,1,4),]
+tabela <- as.data.frame(t(tabela))
+tabela <- tabela[-c(1,2,10),]
+
+kable(tabela, col.names = c("Sem entrantes", "Monópolio", "Duopólio", "Três ou mais"), caption = "Estatísticas de popualação por número de agências") %>%
+  kable_styling(latex_options = "hold_position")
+```
+  
+# Exercício 3  
+  
+Vamos agora estimar um modelo como no BR (91), um probit ordenado. Para isso, vamos usar o pacote do R "entrymodels"^[Pacote criado pelo aluno Guilherme Jardim]. O pacote foi criado para medir empiricamente os efeitos de entrada em um mercado, utilizando o método de BR (91).  
+  
+Para rodar a função do pacote, vamos definir duas variáveis de tamanho de mercado, sendo a primeira a \textbf{população} e a segunda o \textbf{PIB per capita}, além do número máximo de competidores (aqui o pacote usa como default 5 competidores) e dois parâmetros de condição iniciais $\alpha_0$ e $\gamma_0$. Aqui o defalut para essas variáveis são, respectivamente, um vetor de 0.1's e um vetor de 1's.  
+  
+O pacote roda, a partir dessas variáveis que definimos, uma função de verossimilhança para os probits ordenados calculando a probabilidade para cada tipo de oligopólio. Ele otimiza uma segunda vez, utilizando novamente nossos parâmetros iniciais, as duas variáveis de tamanho de mercado (população e PIB per capita), além do $\beta_0$ - aqui definido com o valor inicial de 0.001.  
+  
+O pacote portanto replica o modelo de Bernahan e Reiss (91). Assim, assumimos que $$\Pi_N=\bar\Pi_N+\epsilon=S(Y,\lambda)V_N(Z,W,\alpha,\beta)-F_N(W,\gamma)+\epsilon$$ onde $\lambda$, $\alpha$, $\beta$ e $\gamma$ são os parâmetros da função, $Y$ representa o tamanho do mercado, $Z$ e $W$ são variáveis que afetam, respectivamente a demanda individual e o custo das firmas. $\epsilon$ é um termo de erro não observado que segue uma distribuição normal padrão. Assim, os lucros das firmas vão diferir apenas por esse componente não observado e um componente comum ($\bar\Pi_N$).  
+  
+No entanto, não observamos os lucros das firmas, assim temos que definir limites para $\epsilon$ utilizando um probit ordenado que tem como variável dependente o número de firmas em cada mercado. Quando não há firmar no mercado o lucro deve ser menor do que zero ($\Pi_1<0$), de modo que $\epsilon<-\bar\Pi_1$. Como $\epsilon$ tem distribuição normal padrão, podemos calcular a probabilidade disso ocorrer: $P(\Pi_1<0)=P(\epsilon<\bar\Pi_1)=\phi(-\bar\Pi_1)=1-\phi(\bar\Pi_1)$, onde $\phi(.)$ é a função de densidade acumulada da normal pdrão e $\Pi_1$ é o lucro do monopolista.  
+  
+Assim, a probabilidade de termos $N$ firmas no mercado é $P(\Pi_N\ge0,\Pi_{N+1}<0)=\phi(\bar\Pi_N)-\phi(\bar\Pi_{N+1})$  
+  
+Assim, temos a seguinte formulação: $$S(Y,\lambda)=Pop+\lambda_1PIBpc$$  
+  
+O lucro variável das firmas é dado por: $$V_N=\alpha_1+X\beta-\sum_{n=2}^{N}\alpha_n$$  
+onde $v_1=\alpha_1+X\beta$ é o lucro variável per capita de um monopolista.  
+  
+Como não temos informações detalhadas sobre os curstos, vamos assumir que $$F_N=\gamma_1+\gamma_LW_L+\sum_{n=2}^{N}\gamma_n$$  
+onde $F_1=\gamma_1+\gamma_LW_L$ é o custo fixo do monopolista.
+  
+Voltando para os nossos dados, como o número máximo de competidores definidos pelo pacote é de 5 entrantes, filtramos a base e, assim, ficamos com 5111 observações, número pouco menor daquele que tínhamos com a base com todos os números de agências (5570 observações). Os resultados estão na tabela abaixo.
+  
+```{r, echo=FALSE}
+
+#filtrando df para até 5 competidores
+df_ag_5 <- df_ag %>%
+  subset(agencias <= 5)
+
+#alterando o df para termos uma coluna com o pib_pc*1000
+df_ag_5$pib_pc1000 <- df_ag_5$pib_pc*1000
+
+#rodando BR (91)
+br_91 <- em_2var(df_ag_5, "populacao", "pib_pc1000", "agencias")
+
+#kable
+kable(br_91, caption = "Estimativas", col.names = c("Competidores", "Valores Críticos", "Alpha", "Gamma")) %>% kable_styling(latex_options = "hold_position")
+
+```
+
+  
+A tabela 3 apresenta as estimativas do $\alpha$ e $\gamma$ para os diferentes números de competidores. Na primeira coluna temos o número de entrantes no mercado, na segunda os thresholds de população para entrada no mercado, na terceira os $\alpha$'s, onde $\alpha_1$ é igual so lucro variável do monopolista ($V_1$) e $\alpha_i=V_{i-1}-V_i$, $\forall i>1$. Na quarta coluna temos os $\gamma$'s, onde $\gamma_1$ é igual os custo fixo do monopolista e $\gamma_i=F_i-F_{i-1}$, $\forall i>1$.  
+  
+As estimativas parecem fazer sentido uma vez que o $\alpha$ do monopólio é maior do que o do duopólio e assim por diante. Além disso, o custo fixo de um monopolista se estabelecer no mercado é menor do que o curso fixo de um duopolista se estabelecer. Os thresholds são crescentes, o que também parece ir de acordo com a nossa intuição de que cidades com maior população terão mais agências.
+  
+# Exercício 4  
+  
+Se voltarmos para o exercício 1 e olharmos para as figuras 2 e 3, parece que, entre as nossas variáveis disponíveis, população parece ser aquela que melhor descreve o tamanho do mercado. A outra possibilidade seria usar o PIB per capita, mas, pelo gráfico 3, não parece que o aumento do pib per capita está fortemente positivamente correlacionado com o número de agências, na verdade a relação é quase horizontal.  
+  
+# Exercício 5   
+  
+Nesse exercício vamos computar $s_N/s_n$, onde $s_n=S_n/n$ e $S_n=F_n/V_n$ e $s_N$ é o $s_n$ para o número máximo de agências que estamos considerando. No caso desse exercício, $s_N=s_5$.  
+  
+As razões estão apresentadas na figura 5, abaixo. Podemos ver que a relação é descrescente, de modo que o treshold de tamanho de mercado necessário para abaranger 5 agências é cerca de 4,5 vezes maior do que o mesmo tamanho para apenas uma entrante. Ou seja, podemos ver uma barreira à entrada de novas firmas no mercado.
+  
+```{r, echo=FALSE}
+
+#sn
+br_91$sn <- br_91$critical_values/br_91$n_competitors
+
+#s5/sn
+br_91$s5_sn <- br_91$sn[5]/br_91$sn
+
+#gráfico
+ggplot(br_91, aes(x=n_competitors, y=s5_sn)) + geom_point() +
+  labs(
+  title = "Figure 5: s_5/s_n pelo número de agências",
+  subtitle = "2019",
+  x = "Agências",
+  y = "s5/sn"
+  ) +
+  theme_bw()
+
+```
+
+  
+# Exercício 6  
+  
+Vamos rodar o mesmo exercício agora mas para o ano de 2009 afim de tentar ver se há diferenças significativas em relação a 2019 e, sobretudo, tentar analisar se a presença de fintechs nos últimos anos gerou mudanças significativas no mercado.
+  
+```{r, echo=FALSE}
+
+#2009
+#abrindo e arrumando base da estban (2009)
+estban_09 <- read.csv("estban_2009_12.csv", header = FALSE, sep = ";") %>%
+  subset(select = c(5, 6, 7, 66)) %>%
+  rename(cnpj = V5, banco = V6, agencias = V7, cod_mun = V66)
+
+estban_09 <- estban_09[-1,]
+estban_09$cod_uf <- substring(estban_09$cod_mun, 1, 2)
+estban_09$cod_mun <- substr(estban_09$cod_mun, 3, 7)
+estban_09$cod_mun <- str_remove(estban_09$cod_mun, "^0+")
+
+#abrindo e arrumando bases do ibge (2009)
+## população
+pop_09 <- read.csv("pop_mun_2009.csv", header = FALSE, sep = ";") %>%
+  rename(uf = V1, cod_uf = V2, cod_mun = V3, munic = V4, populacao = V5)
+
+pop_09 <- pop_09[-1,] 
+pop_09$populacao  <- as.numeric(pop_09$populacao)
+
+##pib
+pib_base <- read_excel("base.xls") %>%
+  subset(select = c(1,2,4,5,16)) %>%
+  rename(ano = ano, cod_uf = cod_uf, cod_mun = cod_munic, municipio = munic, pib = pib)
+
+pib_09 <- filter(pib_base, ano == "2009")
+pib_09$pib <- as.numeric(pib_09$pib)
+pib_09$cod_mun <- substr(pib_09$cod_mun, 3, 7) 
+pib_09$cod_mun <- str_remove(pib_09$cod_mun, "^0+")
+
+#juntando os dataframes para ter agencias, população e pib
+df_09 <- merge(pop_09, pib_09, by = c("cod_uf", "cod_mun"), all.x = TRUE)
+df_09 <- merge(df_09, estban_09, by = c("cod_uf", "cod_mun"), all.x = TRUE)
+df_09$agencias <- as.numeric(df_09$agencias)
+df_09$pib_pc <- df_09$pib/df_09$pop
+
+df_09_ag <- subset(df_09, select = -c(ano, cnpj, banco)) %>%
+  group_by(munic, uf, cod_uf, cod_mun, populacao, pib, pib_pc)%>%
+  summarize(agencias = sum(agencias, na.rm = TRUE))
+
+#rodando o BR (91)
+df_09_ag_5 <- df_09_ag %>%
+  subset(agencias <= 5)
+
+#alterando o df para termos uma coluna com o pib_pc*1000
+df_09_ag_5$pib_pc1000 <- df_09_ag_5$pib_pc*1000
+
+#rodando BR (91)
+br_91_09 <- em_2var(df_09_ag_5, "populacao", "pib_pc1000", "agencias")
+
+#kable
+kable(br_91_09, caption = "Estimativas", col.names = c("Competidores", "Valores Críticos", "Alpha", "Gamma")) %>% kable_styling(latex_options = "hold_position")
+
+
+```
+  
+    
+Podemos ver na tabela 3 que embora as estimativas para $\gamma$ e $\alpha$ não difiram muito entre os dois anos analisados, os valores críticos da tabela são bem diferentes entre 2009 e 2019.  
+  
+Vamos agora estimar, como no exercício anterior, $s_N/s_n$, onde $s_n=S_n/n$ e $S_n=F_n/V_n$.  
+  
+```{r, echo=FALSE}
+
+#sn
+br_91_09$sn <- br_91_09$critical_values/br_91_09$n_competitors
+
+#s5/sn
+br_91_09$s5_sn <- br_91_09$sn[5]/br_91_09$sn
+
+#gráfico
+ggplot(br_91_09, aes(x=n_competitors, y=s5_sn)) + geom_point() +
+  labs(
+  title = "Figure 6: s_5/s_n pelo número de agências",
+  subtitle = "2009",
+  x = "Agências",
+  y = "s5/sn"
+  ) +
+  theme_bw()
+
+```
+
+  
+Podemos logo ver uma grande diferença no gráfico. Enquanto que para 2019 ele arepesenta quase que uma trajetória linear, aqui podemos ver que há uma queda brusca na razão logo entre uma e duas agências, ou seja, há uma maior barreira de entrada para que a segunda firma consiga entrar no mercado. Além disso, a razão entra $s_5/s_n$ para uma firma é maior em 2009, o que pode indicar um aumento da competição bancária ao longo do tempo. Uma explicação pode ser, como sugerido no enunciado, que a entrada de fintechs no mercado pode ter aumentado a competição e, portanto, diminuído a concentração de mercado dos grandes bancos.  
+  
+# Exercício 7  
+  
+Não consegui aplicar o modelo Seim e poranto não consegui resolver esse último exercício. Uma possibilidade que havia pensando seria de agrupar os municípios por microrregiões, de modo que cada município estaria agrupado junto com os seus vizinhos. 

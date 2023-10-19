@@ -1,0 +1,616 @@
+---
+title: "Organização Industrial - Lista 1 "
+author: "Aluna Manuela Magalhães - 2012159"
+date: "Prof Leonardo Rezende - 2020.2"
+output:
+   pdf_document:
+    latex_engine: xelatex
+    keep_tex: true #mudo pra true se quiser pegar o arquivo tex intermediário
+number_sections: true
+citation_package: natbib
+in-header: 
+- \usepackage{fancyhdr} 
+- \usepackage{float}
+- \usepackage[portuguese]{babel}
+- \usepackage[utf8]{inputenc}
+- \DeclareUnicodeCharacter{U+0081}{-}
+before_body: 
+- \pagestyle{fancy}
+- \rhead{Problem set 4 \linebreak Microeconomia II }
+- \setlength{\headheight}{23pt} 
+- \lhead{Manuela Magalhães \linebreak 2012159}
+---
+
+```{r include=FALSE}
+setwd('/Users/manue/OneDrive/Documentos/OI - Organização Industrial')
+library(dummies)
+library(tidyverse)
+library(deflateBR)
+library(PNADcIBGE)
+library(tidyr)
+library(kableExtra)
+library(broom)
+library(BLPestimatoR)
+library(stargazer)
+library(ivreg)
+library(caret)
+library(psych)
+library(sjPlot)
+library(sjmisc)
+library(sjlabelled)
+library(ggplot2)
+fipefenabrave <- read.csv("fipefenabrave.csv", header = FALSE)
+fipefenabrave[1, ]
+ fipefenabrave <- fipefenabrave %>%  
+rename(ano_ref = V1,   
+    marca = V2,
+    modelo = V3,
+    descmodelo = V4,
+    preco = V5,
+    quantidade = V6,
+    combustivel = V7,
+    cc = V8,
+    ipi = V9)
+ basedummies <- dummy.data.frame(fipefenabrave, names = c("combustivel") , sep = ".")
+```
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+```
+
+
+```{r cars, include=FALSE}
+sapply(fipefenabrave, function(x) length(unique(x)))
+summary(fipefenabrave)
+basedummies$precodef <- deflate(basedummies$preco, as.Date(paste(basedummies$ano_ref, 12, 01, sep = "-")), "12/2016", index = "ipc")
+```
+\section{Questão 1}
+\paragraph{}
+Não parece haver ganhos ou perdas inequívocos maiores em usar os dados agregados ou não por submodelos.  Embora em regressões tradicionais erros ortogonais de medida na variável dependente não costumem ser um problema, não é o que temos aqui ao usar a quantidade desagregada - o erro de medida é diretamente ligado à quantidade vendida de cada submodelo, sendo ela viesada para cima para os menos vendidos e para baixo para os mais. Além disso, como a quantidade vendida é uma variável crucial para nossa estimação, tenderíamos a subestimar efeitos de certas características: por exemplo, dos 4377 submodelos-ano que temos na base, 2033 pertencem a um modelo no qual há submodelos com outros tipos de combustíveis também, e como por construção terão shares iguais, isso provavelmente atenuará a estimação do coeficiente associado aos tipos de combustível. 
+```{r}
+estatsag <- read.csv("estatsag.csv", header = TRUE, sep = ",")
+```
+Trabalhando com os modelos agregados, surgem duas dificuldades principais. A primeira diz respeito à interpretação dos resultados e à computação das características, por um problema análogo ao que ocorre com as quantidades. Por exemplo, não sabemos se em um modelo que tem quatro submodelos com gasolina e um com diesel, o mais vendido é o diesel ou a gasolina. Para agregar isso justamente evitando fazer suposições sobre as quantidades em que cada modelo está presente, variáveis fatoriais indicando se há uma variedade que consome tal combustível no modelo agregado foram usadas, de forma a possibilitar observar se modelos que tem um submodelo com certa variedade de combustível são em média mais vendidos do que os que não tem. Já as cilindradas e o preço são mais difíceis de serem agregados sem que incorramos no mesmo problema gerado pela suposição de quantidades vendidas iguais nos submodelos. Apesar disso, optei por tirar a média, pois, como vemos nas figuras abaixo, embora haja variância, a distribuição dessas duas variáveis entre os modelos não é totalmente uniforme, de modo que a média parece informativa sobre os submodelos, como medida de tendência central. Também deixo a versão com todas as observações de cada variável dos dois gráficos nas figuras A1 e A2 no apêndice.
+\linebreak
+```{r, fig.width = 5, fig.asp = .52}
+basedes016 <-read.csv("basedes2016.csv")
+e <- ggplot(basedes016, aes(x = precodef, y = modelo))
+e + geom_boxplot()+ xlab("Preço")+ ylab("Modelo") + ggtitle("Figura 1: Dispersão preço por modelo (2016)")
+```
+\linebreak
+```{r, cilindradasbp, fig.width = 5, fig.asp = .52}
+e <- ggplot(basedes016, aes(x = cc1, y = modelo))
+e + geom_boxplot() + ylab("Modelo") + xlab("Cilindradas") + ggtitle("Figura 2: Dispersão cilindradas por modelo 2016")
+```
+
+
+O segundo problema diz respeito à possibilidade de inferência. Ao agregar, ficamos com 498 observações. Usando o método BLP, os procedimentos de simulação usados adicionam variância ao resultado, de forma que é possível que com essa quantidade de observações não sejamos capazes de fazer inferência mantendo o nível de significância em um patamar razoável. Por essas considerações, fiz todas as etapas para ambas as bases, pois parece elucidativo comparar os resultados e as informações que cada uma contém. 
+\section{Questão 2}
+\paragraph{}
+Destrinchar os problemas envolvidos em utilizar apenas os 50 carros mais vendidos envolve pensar em como cada modelo lida com a \textit{outside option}, o bem de fora. O  problema maior é que no modelo de escolha discreta, estamos assumindo que a pessoa pode comprar um único objeto da classe estudada, ou nenhum, ficando com a opção de fora. Na especificação de Bresnahan (1987), com diferenciação vertical, a opção de fora é tratada como a de qualidade percebida como inferior, o que seria pouco crível havendo carros de luxo entre os menos vendidos por ano no Brasil.
+\paragraph{}
+Já nos modelos que usamos, a opção de fora é tratada de outra forma. No caso do BLP, fazemos a seguinte especificação para a utilidade extraída dele:
+\begin{equation}\label{u0blp}
+ u_{i 0}=\alpha \log \left(y_{i}\right)+\xi_{0}+\sigma_{0} \nu_{i 0}+\epsilon_{i 0}
+\end{equation}
+A presença de \(v_{i0}\) permite variação na valoração do bem externo entre os consumidores (e motiva a estimação com um termo aleatório na constante, como se vê na questão 9). A existência de carros, bens que supomos serem substitutos bastante próximos dos bens na base, dentre os bens de fora pede que prestemos mais atenção na hora de fazer hipóteses sobre \(v_{i0}\), um termo aleatório idiossincrático, que pode capturar a diferença entre as percepções de diferentes indivíduos sobre o bem de fora, mas não diferenças nas percepções de um mesmo indivíduo sobre diferentes bens de fora. Isso, porém, não me parece um problema crucial, uma vez que lidamos com utilidade indireta no modelo de escolha direta, e assim, a utilidade extraída do bem de fora é a utilidade extraída do bem de fora que dá maior utilidade ao consumidor. Sendo esse um dos carros de fora da base, o componente captaria isso. Determinar se isso é razoável depende das hipóteses feitas sobre a distribuição desse termo aleatório. Se supomos que para uma quantidade grande de pessoas há uma distância menor entre os carros da base e os carros fora da base do que entre os carros da base e outros serviços e produtos, em termos de utilidade extraída, poderíamos modelar o termo aleatório com um pico de densidade no valor mais alto, representando esses outros carros, e depois seguindo a distribuição usual ajustada. 
+Já no caso do logit, colocar os carros de fora da base não parece no bem de fora não parece um problema, uma vez que lá, dados os market shares, os padrões de substituição estão totalmente determinados, assim, parece natural incluir carros com menor market share no bem de fora. 
+```{r include=FALSE}
+d1 <- basedummies %>% group_by(modelo) %>% summarise(qtdgasolina=sum(combustivel.Gasolina),qtddiesel=sum(combustivel.Diesel),qtdflex=sum(combustivel.Flex),qtdalcool=sum(combustivel.Alcool))
+plot(ecdf(fipefenabrave[,"quantidade"]))
+plot(ecdf(fipefenabrave[fipefenabrave$ano_ref=="2003",]$quantidade),
+          main="Distr quantidades",
+     col="green")
+lines(ecdf(fipefenabrave[fipefenabrave$ano_ref=="2009",]$quantidade),
+      col="blue")
+lines(ecdf(fipefenabrave[fipefenabrave$ano_ref=="2012",]$quantidade),
+      col="red")
+lines(ecdf(fipefenabrave[fipefenabrave$ano_ref=="2016",]$quantidade),
+      col="black")
+legend('bottomright', 
+       legend=c("2003","2009","2012","2016"),  # text in the legend
+       col=c("green","blue","red","black"),  # point colors
+       pch=15)
+```
+
+\section{Questão 3}
+\paragraph{}
+Na hora de determinar o tamanho do mercado, me parece que há dois problemas que operam em direções opostas. O primeiro é que no modelo de escolha discreta, não lidamos com soluções de canto nas quais a renda é insuficiente, o que seria um argumento a favor de manter apenas famílias com renda suficiente no mercado, mas por outro lado, quando calculamos as elasticidades a partir da derivada do market share, estamos assumindo M invariante ao preço das mercadorias. Ou seja, que não há potenciais consumidores que tornariam-se consumidores efetivos se o preço da mercadoria mudasse. Isso entra em conflito com utilizar o preço do carro mais barato para truncar o mercado, pois não conseguiríamos captar o efeito de uma redução do preço nesses consumidores. 
+A solução tradicional é tomar o tamanho do mercado como o tamanho de domicílios no lugar, que é o que farei. Como discutido no item anterior, incluirei os carros fora da base na computação da market share do outside good. Utilizo dados da PNAD de número de domicílios por ano, com exceção de 2010, onde o dado é do Censo. É interessante usar o número de domicílios como mercado, pois o market share dos carros é bastante pequeno, o que no logit, como veremos na questão 4, torna o nível de utilidade médio (o \(\delta-{j}\)) derivado da compra de cada carro negativo, ou seja, menor do que o do outside good, normalizado em zero. Isso é consistente com o que uma avaliação preliminar indicaria: as pessoas não compram carros com frequência alta na vida, ou seja, na média, a utilidade indireta derivada de não comprar carros é maior do que a utilidade indireta derivada de comprar carros (me refiro à utilidade indireta pois isso só faz sentido considerando o preço, ou seja, o \textit{tradeoff} envolvido entre a compra de carros e demais bens e serviços), de forma que o que leva as pessoas a comprarem carros seria o componente não observados pelo econometrista. Isso não significa que não possamos identificar, dentre os carros comprados, relações de preferência, como tentaremos fazer. 
+\section{Questão 4}
+\paragraph{}
+```{r, include=FALSE}
+domicilios <- read.csv("domicios.csv", header = TRUE)
+basedummies <- merge(basedummies,domicilios)
+# calculando market share
+d1 <- basedummies %>% group_by(modelo) %>% summarise(qtdgasolina=sum(combustivel.Gasolina),qtddiesel=sum(combustivel.Diesel),qtdflex=sum(combustivel.Flex),qtdalcool=sum(combustivel.Alcool))
+totalano <- basedummies %>% group_by(ano_ref) %>% summarise(total=sum(quantidade)) 
+basedummies <- merge(basedummies,totalano)
+basedummies$lns0 <- log((basedummies$M - basedummies$total)/basedummies$M)
+basedummies$lnsj <- log(basedummies$quantidade/basedummies$M)
+basedummies$y <- basedummies$lnsj - basedummies$lns0
+# importando as bases lidadas no stata e gerando dummies marcas
+basedes <- read.csv("basedes.csv", header = TRUE) 
+baseagregada <- read.csv("baseagregada.csv", header = TRUE)
+#gerando dummies de marcas e pos09
+baseagregada = baseagregada %>%
+  mutate(pos09 = ano_ref>2008)
+basedes = basedes %>%
+  mutate(pos09 = ano_ref>2008)
+intermed <- data.frame("ano_ref" = baseagregada$ano_ref,"modelo" = baseagregada$modelo,"marca" = as.numeric(baseagregada$marca))
+ dummiesmarcas <- dummy.data.frame(intermed, names = c("marca") , sep = ".")
+ baseagregada <- merge(baseagregada,dummiesmarcas)
+ basedes <- merge(basedes,dummiesmarcas)
+todasmarcas <- paste("marca.",seq(1:16),sep="")
+#  ESTIMANDO O LOGIT (primeiro com preço deflacioando, dps sem)
+ regdes <- as.formula(paste("y ~  precodef + cc1 + dalcool + dgaso + dflex +", paste(todasmarcas,collapse="+")))
+regag1 <- as.formula(paste("y ~ precodef + cc1 + dalcool + dgaso + dflex + ddiesel + mods +", paste(todasmarcas,collapse="+")))
+regag2 <- as.formula(paste("y ~ precodef + cc1 + dalcool + dgaso + dflex + ddiesel + mods + pos09 +", paste(todasmarcas,collapse="+")))
+logitdes <- lm(regdes, data=basedes)  
+logitag1 <- lm(formula = regag1,data=baseagregada)
+logitag2 <- lm(formula = regag2,data=baseagregada)
+```
+Estimaremos o logit proposto no BLP por meio da seguinte regressão
+\begin{equation}
+\ln \left(s_{j}^{n}\right)-\ln \left(s_{0}^{n}\right) = x_{j} \beta-\alpha p_{j} + \xi\left(s^{n}, p, x, \theta, P_{0}\right)
+\end{equation}
+onde \(p_{j}\) é o preço deflacionado para dezembro de 2016 por meio do IPC, sendo a média do preço dos submodelos na base agregada; \(s_{j}\) é a market share do bem j, calculada como a quantidade de vendas de j em relação ao tamanho do mercado, obtido na questão 3, e j=0 indica o outside good. No caso da regressão agregada, sendo \(\mathcal{J}\) o conjunto de tipos de produtos, temos \(\mathcal{J}=84\), e na desagregada \(\mathcal{J}=1249\). Havia 26 cilindradas missing, que completamos - algumas estavam como "1000" no descmodelo, representando 1.0 como foi possível checar em sites especializados. Após isso, restaram 8 cilindradas como missing, cujas descrições de modelos não permitiam identificar sem ambiguidade o real valor. Para essas, utilizamos o valor médio de outros carros do mesmo modelo. Assumimos \(E(\xi\left(s^{n}, p, x, \theta, P_{0}\right)|x_{j}) = 0\), ou seja, independência em média do componente associado às características não observáveis às observáveis. Quando rodamos o logit sem instrumento, só teríamos não viés se também tívessemos \(E(\xi\left(s^{n}, p, x, \theta, P_{0}\right)|p_{j}) = 0\), ou seja, independência em média do preço com não observáveis, o que parece uma hipótese pouco plausível. Como características observáveis, temos \(x_{j} = \begin{pmatrix} 1 & cc &  d_{m}' & d_{c}' \end{pmatrix}' \), onde 1 é a constante (falaremos sobre sua interpretação à frente), cc a variável de cilindradas na base desagregada e a média de cilindradas na desagregada, \(d_{m}\) um vetor com indicadoras de marca, em ambas as bases, e \(d_{c}\) um vetor com informações sobre combustível - na base desagregada, trata-se de uma indicadora indicando se o submodelo usa cada combustível, onde uma é omitida, na base desagregada, fizemos com a especificação de uma indicadora de se há um submodelo que usa x combustível, ou percentual de submodelos de cada combustível (no último caso se omite uma, pois o percentual soma 1 - há colinearidade pois temos constante no modelo, enquanto no primeiro caso não se omite). Os resultados estão sumarizados nas tabelas a seguir
+```{r, echo=FALSE, results='asis'} 
+logitag = logitag1
+stargazer(logitdes, logitag, type="latex", dep.var.labels.include = FALSE, dep.var.caption="",model.numbers = FALSE,
+no.space = TRUE, digits = NA, keep.stat="n", omit=c("marca","pos09"),table.placement = "H",out.header = FALSE, header = FALSE, title="Estimação do logit", notes=c("Todas as indicadoras são mantidas para a base agregada, pois não são colineares" ,"(indicam se há um submodelo com o combustível)."), column.labels = c("Desagregada","Agregada - 1", "Agregada - 2"), covariate.labels = c("Preço deflacionado", "Cilindradas", "Álcool",
+                               "Gasolina", "Flex", "Diesel (agregada)","Número de modelos (agregada)"), add.lines = list(c("Indicadoras de marca","Sim","Sim","Sim")))
+```
+
+\section{Questão 5}
+\paragraph{}
+Utilizo o IPI como instrumento para o preço no caso da base agregada, e, como o BLP propõe, a soma dos IPIs das demais firmas como instrumento no caso da base agregada. Os resultados de primeiro estágio estão sumarizados na tabela \ref{tab:pestagio} no apêndice.  Os resultados estão na tabela \ref{tab:logitiv}. Embora já sem o instrumento o coeficiente do preço fosse negativo, ele era de uma ordem de grandeza 10 vezes menor, e as estimativas de custo marginal obtidas com o coeficiente do logit sem instrumento traziam diversos carros com custo marginal negativo, diferente de agora, como mostro na questão 7. Além disso, o coeficiente associado às cilindradas passa a ser positivo, o que me parece mais razoável. As indicadoras de combustível não estatisticamente diferentes de zero na estimação com a agregação, o que parece economicamente mais plausível do que o sinal negativo encontrado para a indicadora de combustível flex no modelo desagregado, que é tentador atribuir à imposição por construção do mesmo share para todos os submodelos de cada modelo.
+```{r, include=FALSE}
+#colocando dummies de ano
+ basedes <- merge(basedes,dummy.data.frame(basedes, names = c("ano_ref") , sep = "."))
+ todosanos <- paste("ano_ref.",seq(2004,2016),sep="")
+ #gerando fórmula e lista instrumentos
+instrumentosdes <- paste(" ipisdemais + cc1 + dalcool + dgaso + dflex +",paste(todasmarcas,collapse="+"))
+instrumentosag1 <- paste("ipi + cc1 + dalcool + dgaso + dflex + ddiesel + mods +", paste(todasmarcas,collapse="+"))
+instrumentosag2 <- paste("ipi + cc1 + dalcool + dgaso + dflex + ddiesel + mods + pos09 +", paste(todasmarcas,collapse="+"))
+regdesiv <- as.formula(paste("y ~  precodef + cc1 + dalcool + dgaso + dflex + ",paste(todasmarcas,collapse="+"),"|",paste(instrumentosdes)))
+regagiv1 <- as.formula(paste("y ~ precodef + cc1 + dalcool + dgaso + dflex + ddiesel + mods + ", paste(todasmarcas,collapse="+"),"|", paste(instrumentosag1)))
+regagiv2 <- as.formula(paste("y ~ precodef + cc1 + dalcool + dgaso + dflex + ddiesel + mods + pos09 + ", paste(todasmarcas,collapse="+"),"|", paste(instrumentosag2)))
+# primeiro estágio - talvez conste reportar
+ pestagiodes <- lm(as.formula(paste("precodef ~ ", paste(instrumentosdes))), data=basedes)
+ pestagioag1 <- lm(as.formula(paste("precodef ~",paste(instrumentosag1))), data=baseagregada)
+ pestagioag2 <- lm(as.formula(paste("precodef ~",paste(instrumentosag2))), data=baseagregada)
+#estimando IV
+ivdes = ivreg(regdesiv , data = basedes)
+ivag1  = ivreg(regagiv1 , data = baseagregada)
+ivag2  = ivreg(regagiv2 , data = baseagregada)
+ivag = ivag1
+```
+```{r, echo=FALSE, results='asis' }
+stargazer(ivdes, ivag, type="latex", digits = NA, header = FALSE, dep.var.labels.include = FALSE,
+no.space = TRUE, dep.var.caption="",label = "tab:logitiv",model.numbers = FALSE,table.placement = "H", omit=c("marca","pos09"),keep.stat="n",out.header = FALSE, title="Estimação do logit instrumentando o preço", notes="Como antes, todas as indicadoras apenas na agregada.",covariate.labels = c("Preço deflacionado", "Cilindradas", "Álcool",
+                               "Gasolina", "Flex", "Diesel (agregada)","Número de modelos (agregada)"), column.labels = c("Desagregada","Agregada"), add.lines = list(c("Indicadoras de marca","Sim","Sim","Sim")))
+```
+\section{Questão 6}
+\paragraph{}
+Para computar as elasticidades, fazemos
+\[
+\eta_{j k t}=\frac{\partial s_{i t} p_{k t}}{\partial p_{k t} s_{j t}}=\left\{\begin{array}{ll}
+-\alpha p_{j t}\left(1-s_{j t}\right) & \text { se } j=k \\
+\alpha p_{k t} s_{k t} & \text { caso contrário }
+\end{array}\right.
+\]
+Como vemos nos gráficos, a relação entre o market share e a elasticidade cruzada é positiva. No caso dos submodelos, as linhas verticais onde há mais de um ponto são os modelos, pois como vimos, por construção os submodelos têm o mesmo market share, de modo que a única variação no cômputo elasticidade cruzada é oriunda do preço de cada um.
+```{r, include=FALSE}
+sgolag = data.frame((exp(filter(baseagregada, modelo == "GOL")$lnsj)),(filter(baseagregada, modelo == "GOL")$ano))
+sgoldes = data.frame((exp(filter(baseagregada,modelo == "GOL")$lnsj)/filter(baseagregada, modelo == "GOL")$mods),(filter(baseagregada,modelo == "GOL")$ano))
+basedes$sj = exp(basedes$lnsj)
+baseagregada$sj = exp(baseagregada$lnsj)
+baseagregada$elastgol = 
+baseagregada$egoliv <- - ivag[["coefficients"]][["precodef"]] *baseagregada$sj * baseagregada$precodef
+baseagregada$egoliv[baseagregada$modelo == "GOL"] <- ivag[["coefficients"]][["precodef"]] *(1 - baseagregada$sj[baseagregada$modelo == "GOL"]) * baseagregada$precodef[baseagregada$modelo == "GOL"]
+basedes$egoliv <- - ivdes[["coefficients"]][["precodef"]] *basedes$sj * basedes$precodef
+basedes$egoliv[basedes$modelo == "GOL"] <- ivag[["coefficients"]][["precodef"]] *(1 - basedes$sj[basedes$modelo == "GOL"]) * basedes$precodef[basedes$modelo == "GOL"]
+# CHECANDO SE ELASTS MENORES QUE 1 EM MÓDULO
+baseagregada$elastproplogit <- ivag[["coefficients"]][["precodef"]] *(1 - baseagregada$sj) * baseagregada$precodef
+basedes$elastproplogit <- ivdes[["coefficients"]][["precodef"]] *(1 - basedes$sj) * basedes$precodef
+nrow(basedes[basedes$elastproplogit  < "-1",])
+#GRÁFICOS
+```
+```{r, fig.width = 3, fig.asp = .72}
+grafdes <- basedes %>% filter(ano_ref == 2016, modelo != "GOL")
+e <- ggplot(grafdes, aes(x = sj, y = egoliv))
+e + geom_point() + ggtitle("Figura 3: Base desagregada (2016)") + xlab("Market share") + ylab("Elasticidade do gol") + theme(plot.title = element_text(size = 10))
+```
+```{r, fig.width = 3, fig.asp = .72}
+grafag <- baseagregada %>% filter(ano_ref == 2016, modelo != "GOL")
+e <- ggplot(grafag, aes(x = sj, y = egoliv))
+e + geom_point() + ggtitle("Figura 4: base agregada (2016)") + xlab("Market share") + ylab("Elasticidade do gol") + theme(plot.title = element_text(size = 10))
+```
+\section{Questão 7}
+\paragraph{}
+Tomo as marcas como diferentes firmas, que maximizam o lucro conjunto de todos os seus produtos. Assim, o problema de maximização de lucro para a marca f no mercado t é
+\begin{equation}
+\Pi = \max_{p_{i,t},i \in \mathcal{J}_{f}} \sum_{i \in \mathcal{J}_{f}} p_{i,t}s_{i,t}M - c_{i}Ms_{i,t} - F_{i,t} 
+\end{equation}
+onde \(\mathcal{J}_{f}\) é o conjunto de produtos produzido pela marca f e \(F_{i,t}\) um termo associado ao custo fixo, cuja condição de primeira ordem implica
+\begin{equation}
+\begin{split}
+\frac{\partial \Pi}{\partial p_{i,t}} = \sum_{j \in \mathcal{J}_{m}}p_{j,t}\frac{\partial s_{j,t}}{\partial p_{i,t}} M + s_{i,t}M- \sum_{j \in \mathcal{J}_{m}}\frac{\partial s_{j,t}}{\partial p_{i,t}}  c_{j} M =  0
+\end{split}
+\end{equation}
+Estamos assumindo que o tamanho do mercado potencial não é afetado pelo preço. Assim, defino uma matriz como a de Berry, Pakinson e Levin (1995) \( J \) por \( J \), \( \Delta, \) cujos elementos são dados por
+\( \quad \Delta_{j r}=\left\{\begin{array}{ll} - \frac{\partial s_{r}}{\partial p_{j}}  & \text { se } r \text { e } y \text{ são produzidos pela mesma firma} \\ 0, & \text { caso contrário }\end{array}\right. \)
+e podemos escrever o conjunto das CPOs na forma matricial e a forma para o custo como 
+\begin{equation}
+s(p, x, \xi: \theta)-\Delta(p, x, \xi ; \theta)[p-c]=0 \Rightarrow p= c+\Delta(p, x, \xi ; \theta)^{-1} s(p, x, \xi ; \theta)
+\end{equation}
+```{r, include=FALSE}
+# gerando matriz Delta - BASE AGREGADA
+dsjag <- sapply(1:nrow(baseagregada), function(i) -(ivag[["coefficients"]][["precodef"]] * baseagregada[i, ]$sj * baseagregada$sj))
+diag(dsjag) <- ivag[["coefficients"]][["precodef"]] * baseagregada$sj * (1-baseagregada$sj)
+for(marca in unique(baseagregada$marca)) {
+  i <- which(baseagregada$marca == marca)
+  j <- which(baseagregada$marca != marca)
+  dsjag[i, j] <- 0
+}
+for (ano in 2003:2016) { 
+indicesag <- which(baseagregada$ano_ref == ano)
+dsjag_t <- dsjag[indicesag, indicesag]
+baseagregada$custos[baseagregada$ano_ref==ano] = baseagregada[indicesag, ]$precodef + solve(dsjag_t, baseagregada[indicesag, ]$sj)
+}
+# Gerando matriz delta - DESAGREGADA
+dsjdes <- sapply(1:nrow(basedes), function(i) -(ivdes[["coefficients"]][["precodef"]] *  basedes[i, ]$sj * basedes$sj))
+diag(dsjdes) <- ivdes[["coefficients"]][["precodef"]] *  basedes$sj * (1-basedes$sj)
+for(marca in unique(basedes$marca)) {
+  i <- which(basedes$marca == marca)
+  j <- which(basedes$marca != marca)
+  dsjdes[i, j] <- 0
+}
+for (ano in 2003:2016) { 
+indicesdes <- which(basedes$ano_ref == ano)
+dsjdes_t <- dsjdes[indicesdes, indicesdes]
+basedes$custos[basedes$ano_ref==ano] = basedes[indicesdes, ]$precodef + solve(dsjdes_t, basedes[indicesdes, ]$sj)
+}
+# GERANDO MARKUPS
+baseagregada$markupabs = baseagregada$precodef-baseagregada$custos
+baseagregada$markuprel = (baseagregada$precodef-baseagregada$custos)/baseagregada$precodef
+basedes$markupabs = basedes$precodef-basedes$custos
+basedes$markuprel = (basedes$precodef-basedes$custos)/basedes$precodef
+```
+Assim, a tabela \ref{tab:cmgag} traz o custo marginal, o markup relativo, calculado como \(m_{rel}=\frac{p_{j}-c_{j}}{p_{j}}\) e o markup absoluto calculado para todos os modelos agregados em 2016, e a tabela \ref{tab:cmgdes} traz as estatísticas descritivas do custo marginal por quartis do markup relativo para o ano de 2016. O custo sobe com o markup relativo, o que parece razoável. Como ocorre em Bery, Levinhsohn e Pakes (1995), o markup absoluto é aproximadamente constante.
+```{r, echo= FALSE, results='asis'}
+basedes$descmodelo1=substr(basedes$descmodelo,1,11)
+cmglogitdes <- basedes %>% filter(ano_ref == 2016) %>% summarize(descmodelo1,custos,markupabs,markuprel)
+for (i in 1:4) {
+cmglogitdes$quantil[cmglogitdes$markuprel>=quantile(cmglogitdes$markuprel)[i]] = i
+}
+cmglogitdes <- add_row(cmglogitdes,quantil=2, descmodelo1 = NA,markuprel=NA,markupabs=NA,custos=NA)
+cmglogitdes <- add_row(cmglogitdes,quantil=3, descmodelo1 = NA,markuprel=NA,markupabs=NA,custos=NA)
+quartisdes <- data.frame(primeiro = cmglogitdes$custos[cmglogitdes$quantil==1], segundo = cmglogitdes$custos[cmglogitdes$quantil==2],terceiro = cmglogitdes$custos[cmglogitdes$quantil==3], quarto = cmglogitdes$custos[cmglogitdes$quantil==4])
+stargazer(quartisdes, type = "latex", title = "Estatísticas descritivas do custo marginal por quartis do markup relativo, base desagregada (2016)", table.placement = "H", header = FALSE, label = "tab:cmgdes")
+```
+```{r, cmgag, echo=FALSE}
+# tabela CUSTO AGREGADA
+cmglogitag <- baseagregada %>% filter(ano_ref == 2016) %>% summarize(modelo,custos,markupabs,markuprel)
+cmglogitag <- cmglogitag[order(cmglogitag$markuprel),]
+kbl(cmglogitag, col.names = c("Modelo","Custo marginal","Markup absoluto","Markup relativo"),caption = "Estimativas de custo marginal e markups para os modelos agregados em 2016",row.names = FALSE) %>% kable_styling(latex_options = "HOLD_position")
+```
+
+\section{Questão 8}
+\paragraph{}
+Como no BLP, adoto para cada característica mantida na especificação três instrumentos: ela própria, a soma dela entre os demais carros da mesma marca no mesmo mercado (sem incluir j), e a soma dela entre as marcas rivais também no mesmo mercado. Note que agora a variável de número de submodelos (subtraída de 1) entra como potencial instrumento para a constante. Também deixo os efeitos fixos de marca, assumidos como exógenos para a demanda, sem coeficiente aleatório, na base desagregada, mas não na agregada, pois além de trazer menos informação nova (há menos variação pois já estamos agregando os submodelos), leva a uma perda de graus de liberdade. No caso da base agregada, assumo como exógenas as indicadoras de combustíveis e também adiciono um controle temporal para os anos após 2008, para dividir os anos no meio, uma maneira de tentar controlar por uma tendência temporal sem saturar o modelo, já que há poucas observações disponíveis. Embora a mudança no IPI ocorrida nesse período correlacione com a oferta, como estamos usando o IPI como instrumento, faço a hipótese de que, dado o IPI, essa indicadora de tempo pode captar mudanças nas preferências dos consumidores no tempo e é ortogonal à oferta. A especificação sem esse controle temporal resultou em estimativas menos convincentes do custo marginal e do coeficiente do preço, as quais deixo no apêndice.
+```{r, estblp, include=FALSE}
+#estimação BLP
+# DESAGREGADA
+blp_desag <- as.formula(paste("sj ~   precodef  + ",paste(todasmarcas,collapse="+"), "+ cc1 + dgaso |
+    0 + ",paste(todasmarcas,collapse="+"), "|
+      precodef |
+    0+ ipi + ipisdemais + ipisprop + dgasosdemais +dgasosprop + dgasosdemais + cc1sprop + cc1sdemais "))
+#preparando a base
+desagblp_data <- BLP_data(
+  model = blp_desag,
+  market_identifier = "ano_ref",
+  product_identifier = "descmodelo",
+  productData = basedes,
+integration_method = "MLHS",
+integration_accuracy = 40,
+                     integration_seed = 1,
+additional_variables = paste0(c("marca.1","marca.2", "marca.3","marca.4","marca.5","marca.6","marca.7","marca.8", "marca.9","marca.10","marca.11","marca.12","marca.13", 
+"marca.14","marca.15","marca.16","marca.17"))
+  #integration_weights = rep(1 / 20, 20)
+)
+desag_est <- estimateBLP(
+  blp_data = desagblp_data,
+  solver_method = "BFGS", solver_maxit = 1000, solver_reltol = -100000,
+  standardError = "heteroskedastic",
+  extremumCheck = FALSE,
+  printLevel = 1
+)
+# AGREGADA ########### AGREGADA ############## AGREGADA #AQUIFORMULA
+ basedummies <- dummy.data.frame(baseagregada, names = c("ano_ref") , sep = ".")
+baseagregada <- merge(basedummies,baseagregada)
+  blp_ag <-  as.formula(paste("sj ~   precodef + cc1 + dgaso + ddiesel + dalcool + dflex +pos09 |    0   + cc1 + dgaso + ddiesel + dalcool + dflex + pos09  |      precodef + cc1  |
+    0+ ipisdemais + ipisprop +  ddieselsprop + ddieselsdemais + constantesprop + constantesdemais "))
+#preparando a base
+agblp_data <- BLP_data(
+  model = blp_ag,
+  market_identifier = "ano_ref",
+  product_identifier = "modelo",
+  productData = baseagregada,
+integration_method = "MLHS",
+integration_accuracy = 40,
+ integration_seed = 1,
+additional_variables = paste0(c("marca.1","marca.2", "marca.3","marca.4","marca.5","marca.6","marca.7","marca.8", "marca.9","marca.10","marca.11","marca.12","marca.13", 
+"marca.14","marca.15","marca.16","marca.17")))
+ag_est <- estimateBLP(
+  blp_data = agblp_data,
+  solver_method = "BFGS", solver_maxit = 1000, solver_reltol = -100000,
+  standardError = "heteroskedastic",
+  extremumCheck = FALSE,
+  printLevel = 1
+  )
+```
+```{r, resultblpag, include=TRUE}
+#Reportando resultado BLP
+agblp_sum=summary(ag_est)
+blpresultag = rbind(agblp_sum$LinCoefficients,agblp_sum$RcCoefficients)
+colnames(blpresultag) = c("Estimativa", "Erro-Padrão", "Estatística-t", "P-valor")
+rownames(blpresultag) = c("Constante", "Preço deflacionado", "Cilindradas", "Indicadora gasolina", "Indicadora diesel", "Indicadora álcool", "Indicadora flex","Indicadora temporal","Constante-coef aleatório", "Preço deflacionado-coef aleatório","Cilindradas - coef aleatório")
+kable(blpresultag, caption = "Estimação pelo BLP - base agregada") %>% kable_styling(latex_options = "HOLD_position")
+```
+```{r, resultbldes, include=TRUE}
+desagblp_sum = summary(desag_est)
+blpresultdes = rbind(desagblp_sum$LinCoefficients,desagblp_sum$RcCoefficients)
+blpresultdes <- blpresultdes
+colnames(blpresultdes) = c("Estimativa", "Erro-Padrão", "Estatística-t", "P-valor")
+blpresultdes <- add_row(blpresultdes,Estimativa=NA,`Erro-Padrão`=NA, `Estatística-t` = NA, `P-valor`=NA)
+rownames(blpresultdes) = c("Constante", "Preço deflacionado", "m1","m2","m3","m4","m5","m6","m7","m8","m9","m10","m11","m12","m13","m14","m15","m16","Cilindradas", "Indicadora gasolina", "Constante-coef aleatório", "Preço deflacionado-coef aleatório","Indicadora de Marcas: Sim")
+kable(blpresultdes[c(1,2,19,20,21,22,23),,], caption = "Estimação pelo BLP - base desagregada") %>% kable_styling(latex_options = "HOLD_position")
+```
+
+\section{Questão 9}
+\subsection{Elasticidades}
+\paragraph{}
+Nas figuras 5 e 6, temos as estimativas análogas ao logit. Uma primeira observação é que a dependência positiva da elasticidade no market share não mais salta aos olhos. Além disso, são, na moda, maiores do que as estimadas por meio do logit.
+```{r, echo=FALSE, include=FALSE}
+# elasts agregada
+infoag <-getShareInfo(agblp_data)
+#pegando parametros do output
+thetaag_precodef <- ag_est$theta_lin["precodef",1]
+#pegando as elasticidades
+matrizelasts2016ag = get_elasticities(blp_data=agblp_data, share_info = infoag, theta_lin=thetaag_precodef , variable="precodef", market="2016")
+# lidando pro gráfico
+elast2016ag = data.frame(t(matrizelasts2016ag))
+elast2016ag <- rownames_to_column(elast2016ag, var = "modelo")
+grafagblp <- baseagregada %>% filter(ano_ref == 2016)
+grafagblp <- merge(elast2016ag,grafagblp,by.x = "modelo")
+grafagblp <- data.frame(modelo = grafagblp$modelo, sj = grafagblp$sj, egolblp = grafagblp$GOL)
+# tirando o gol
+grafagblp <- filter(grafagblp, modelo != "GOL")
+# elasts desagregada
+infodesag <-getShareInfo(desagblp_data,  printLevel = 1)
+#pegando parametros do output
+theta1_preco_dfl <- desag_est$theta_lin[2]
+#pegando as elasticidades
+matrizelasts2016des <- get_elasticities(blp_data=desagblp_data, share_info = infodesag, theta_lin=theta1_preco_dfl , variable="precodef", market="2016")
+# lidando pro gráfico
+elast2016des = data.frame(t(matrizelasts2016des))
+elast2016des <- rownames_to_column(elast2016des, var = "descmodelo")
+grafdesblp <- basedes %>% filter(ano_ref == 2016)
+grafdesblp <- merge(elast2016des,grafdesblp,by.x = "descmodelo")
+grafdesblp <- data.frame(descmodelo = grafdesblp$descmodelo, sj = grafdesblp$sj, egolblp = grafdesblp$Gol.Comfortline.1.0.T..Flex.12V.5p)
+grafdesblp <- filter(grafdesblp, grafdesblp$egolblp >0)
+```
+```{r, fig.width = 3, fig.asp = .72}
+e <- ggplot(grafdesblp, aes(x = sj, y = egolblp))
+e + geom_point() + ggtitle("Figura 5: base desagregada (2016)") + xlab("Market share") + ylab("Elasticidade do gol - BLP") + theme(plot.title = element_text(size = 10))
+```
+```{r, fig.width = 3, fig.asp = .72}
+e <- ggplot(grafagblp, aes(x = sj, y = egolblp))
+e + geom_point() + ggtitle("Figura 6: base agregada (2016)") + xlab("Market share") + ylab("Elasticidade do gol - BLP") + theme(plot.title = element_text(size = 10))
+```
+\subsection{Custo marginal}
+De novo, reporto as tabelas análogas às reportadas na estimação pelo logit.
+```{r, desagcmgblp, include=FALSE}
+####  DESAGREGADA ######### DESAGREGADA CMG BLP ####
+market_id <- desagblp_data$parameters$market_id
+nmkt <- length(unique(market_id))
+markups <- numeric(length(market_id))
+sh <- infodesag$shares
+prices_pre <- desagblp_data$data$X_lin[, "precodef"]
+indices <- desagblp_data$parameters$market_id == (1)
+shares <- infodesag$shares[indices]
+prices <- desagblp_data$data$X_lin[, "precodef"][indices]
+scalar <- matrix(1 / shares) %*% matrix(prices, nrow = 1)
+elasticities <- get_elasticities(
+    blp_data = desagblp_data,
+    share_info = infoag,
+    theta_lin = theta1_preco_dfl,
+    variable = "precodef",
+    market = "2016",
+    printLevel = 0
+  )
+derivatives <-  elasticities / scalar
+own_pre <- as.matrix(desagblp_data$data$additional_data[, c("marca.1","marca.2", "marca.3","marca.4","marca.5","marca.6","marca.7","marca.8", "marca.9","marca.10","marca.11","marca.12","marca.13", 
+"marca.14","marca.15","marca.16","marca.17")])[indices, ] 
+own_prod_pre <- own_pre %*% t(own_pre)
+markups <- -solve(t(derivatives) * own_prod_pre, shares)
+custosdes <- prices - markups
+names(custosdes) <- names(markups)
+```
+```{r, echo= FALSE, results='asis'}
+cmgblpdes = as.data.frame(custosdes)
+cmgblpdes = rownames_to_column(cmgblpdes)
+precosdes <- basedes %>% filter(ano_ref == 2016)
+markupblpdes = rownames_to_column(as.data.frame(markups))
+cmgblpdes = merge(cmgblpdes,markupblpdes)
+cmgblpdes <- cmgblpdes %>%  
+rename(descmodelo = rowname)
+cmgblpdes = merge(cmgblpdes,precosdes)
+cmgblpdes$markuprelblp = (cmgblpdes$precodef - cmgblpdes$custosdes)/cmgblpdes$precodef
+cmgblpdes = data.frame(descmodelo = cmgblpdes$descmodelo,cmgblp = cmgblpdes$custosdes,markupabs = cmgblpdes$markups,markuprel =cmgblpdes$markuprelblp, modelo =cmgblpdes$modelo)
+cmgblpdes$descmodelo1=substr(cmgblpdes$descmodelo,1,11)
+for (i in 1:4) {
+cmgblpdes$quantil[cmgblpdes$markuprel>=quantile(cmgblpdes$markuprel)[i]] = i
+}
+cmgblpdes <- add_row(cmgblpdes,quantil=2, descmodelo1 = NA,markuprel=NA,markupabs=NA,cmgblp=NA, modelo = NA,descmodelo = NA)
+cmgblpdes <- add_row(cmgblpdes,quantil=3, descmodelo1 = NA,markuprel=NA,markupabs=NA,cmgblp=NA, modelo = NA, descmodelo = NA)
+quartisdes <- data.frame(primeiro = cmgblpdes$cmgblp[cmgblpdes$quantil==1], segundo = cmgblpdes$cmgblp[cmgblpdes$quantil==2],terceiro = cmgblpdes$cmgblp[cmgblpdes$quantil==3], quarto = cmgblpdes$cmgblp[cmgblpdes$quantil==4])
+stargazer(quartisdes, type = "latex", title = "Estatísticas descritivas do custo marginal BLP por quartis do markup relativo, base desagregada (2016)", table.placement = "H", header = FALSE, label = "tab:cmgblpdes")
+#vendo se todo modelo tem um descmodelo com custo marginal positivo
+cmgblpdes = cmgblpdes %>%
+  group_by(modelo) %>%
+  mutate(qtdpositivo = as.integer(any(cmgblp>0)))
+```
+Como se vê na tabela, alguns custos marginais de submodelos calculados ficaram negativos (eles ficam no maior markup relativo pois ficam com markup relativo acima de 1).  Isso não só não faz sentido intuitivo, como também é incompatível com a maximização de lucro - como supomos custo marginal constante aqui, houvesse um submodelo em que ele é negativo, a firma optaria por produzir uma.Uma explicação possível é que ao forçarmos quantidades iguais compradas para os submodelos, para que faça sentido
+```{r}
+c = rownames_to_column(as.data.frame(diag(matrizelasts2016des)))
+c <- c %>%  
+rename(descmodelo = rowname)
+c$descmodelo1=substr(c$descmodelo,1,11)
+cmgblpdes <- merge(c,cmgblpdes)
+b=count(cmgblpdes,qtdpositivo==0)
+```
+
+```{r, blpcmg}
+# AGREGADA - ref código: https://cran.r-project.org/web/packages/BLPestimatoR/vignettes/blp_intro.html
+market_id <- agblp_data$parameters$market_id
+nmkt <- length(unique(market_id))
+markups <- numeric(length(market_id))
+sh <- infoag$shares
+prices_pre <- agblp_data$data$X_lin[, "precodef"]
+indices <- agblp_data$parameters$market_id == (1)
+shares <- infoag$shares[indices]
+prices <- agblp_data$data$X_lin[, "precodef"][indices]
+scalar <- matrix(1 / shares) %*% matrix(prices, nrow = 1)
+derivatives <-  matrizelasts2016ag / scalar
+own_pre <- as.matrix(agblp_data$data$additional_data[, c("marca.1","marca.2", "marca.3","marca.4","marca.5","marca.6","marca.7","marca.8", "marca.9","marca.10","marca.11","marca.12","marca.13", 
+"marca.14","marca.15","marca.16","marca.17")])[indices, ] 
+own_prod_pre <- own_pre %*% t(own_pre)
+markups <- -solve(t(derivatives) * own_prod_pre, shares)
+custosag <- prices - markups
+names(custosag) <- names(markups)
+```
+```{r, cmgagblptabela, echo=FALSE}
+# tabela CUSTO AGREGADA
+cmgblpag = as.data.frame(custosag)
+cmgblpag = rownames_to_column(cmgblpag)
+precosag <- baseagregada %>% filter(ano_ref == 2016)
+markupblpabs = rownames_to_column(as.data.frame(markups))
+cmgblpag = merge(cmgblpag,markupblpabs)
+cmgblpag <- cmgblpag %>%  
+rename(modelo = rowname)
+cmgblpag = merge(cmgblpag,precosag)
+cmgblpag$markuprelblp = (cmgblpag$precodef - cmgblpag$custosag)/cmgblpag$precodef
+cmgblpag = data.frame(modelo = cmgblpag$modelo,cmgblp = cmgblpag$custosag,markupabs = cmgblpag$markups,markuprel =cmgblpag$markuprelblp)
+cmgblpag <- cmgblpag[order(cmgblpag$markuprel),]
+kbl(cmgblpag,col.names = c("Modelo","Custo marginal","Markup absoluto","Markup relativo"), caption = "Estimativas BLP de custo marginal e markups para os modelos agregados em 2016",row.names = FALSE) %>% kable_styling(latex_options = "HOLD_position")
+```
+
+
+
+\section{Apêndice}
+\subsection{Dispersão covariadas nos modelos}
+```{r, fig.width = 6, fig.asp = .62}
+basedes016 <-read.csv("basedes2016.csv")
+e <- ggplot(basedes016, aes(x = precodef, y = modelo))
+e + geom_point()+ xlab("Preço")+ ylab("Modelo") + ggtitle("Figura A1 - Dispersão por modelos (2016)")
+```
+```{r, cilindradaspoint, fig.width = 6, fig.asp = .62}
+e <- ggplot(basedes016, aes(x = cc1, y = modelo))
+e + geom_point() + ylab("Modelo") + xlab("Cilindradas") + ggtitle("Figura A2 - Dispersão por modelo 2016")
+```
+\subsection{Primeiro estágio logit IV}
+```{r, echo=FALSE, results='asis' }
+#RESULTADOS PRIMEIRO ESTÁGIO
+ stargazer(pestagiodes, pestagioag1, no.space = TRUE, dep.var.labels.include = FALSE, dep.var.caption="Preço deflacionado",model.numbers = FALSE, type="latex", label="tab:pestagio", digits = NA, omit=c("marca","dg","df","da","dd","mods"),omit.stat=c("rsq","adj.rsq"),keep.stat="n",out.header = FALSE,header = FALSE, title="Primeiro estágio da estimação do Logit por VI",covariate.labels = c("Soma IPI das demais","IPI médio","Cilindradas"), table.placement="H", column.labels = c("Desagregada","Agregada"),add.lines = list(c("Indicadoras de marca","Sim","Sim"),c("Indicadoras de combustível","Sim","Sim"),c("Número de submodelos","Não","Sim")))
+```
+\subsection{BLP sem indicadora de tempo}
+```{r, echo=FALSE, include=FALSE}
+blp_ag1 <-  as.formula(paste("sj ~   precodef + cc1 + dgaso + ddiesel + dalcool + dflex  |    0   + cc1 + dgaso + ddiesel + dalcool + dflex  |      precodef + cc1  |
+    0+ ipisdemais + ipisprop +  ddieselsprop + ddieselsdemais + constantesprop + constantesdemais "))
+#preparando a base
+ag1blp_data <- BLP_data(
+  model = blp_ag1,
+  market_identifier = "ano_ref",
+  product_identifier = "modelo",
+  productData = baseagregada,
+integration_method = "MLHS",
+integration_accuracy = 40,
+ integration_seed = 1,
+additional_variables = paste0(c("marca.1","marca.2", "marca.3","marca.4","marca.5","marca.6","marca.7","marca.8", "marca.9","marca.10","marca.11","marca.12","marca.13", 
+"marca.14","marca.15","marca.16","marca.17")))
+ag1_est <- estimateBLP(
+  blp_data = ag1blp_data,
+  solver_method = "BFGS", solver_maxit = 1000, solver_reltol = -100000,
+  standardError = "heteroskedastic",
+  extremumCheck = FALSE,
+  printLevel = 1
+  )
+```
+```{r, resultblpag1, include=TRUE}
+#Reportando resultado BLP
+ag1blp_sum=summary(ag1_est)
+blpresultag1 = rbind(ag1blp_sum$LinCoefficients,ag1blp_sum$RcCoefficients)
+colnames(blpresultag1) = c("Estimativa", "Erro-Padrão", "Estatística-t", "P-valor")
+rownames(blpresultag1) = c("Constante", "Preço deflacionado", "Cilindradas", "Indicadora gasolina", "Indicadora diesel", "Indicadora álcool", "Indicadora flex","Constante-coef aleatório", "Preço deflacionado-coef aleatório","Cilindradas - coef aleatório")
+kable(blpresultag1, caption = "Estimação pelo BLP - base agregada (sem controle temporal)") %>% kable_styling(latex_options = "HOLD_position")
+```
+```{r, echo=FALSE, include=FALSE}
+# elasts agregada
+infoag1 <-getShareInfo(ag1blp_data)
+#pegando parametros do output
+thetaag1_precodef <- ag1_est$theta_lin["precodef",1]
+#pegando as elasticidades
+matrizelasts2016ag1 = get_elasticities(blp_data=ag1blp_data, share_info = infoag1, theta_lin=thetaag1_precodef , variable="precodef", market="2016")
+# lidando pro gráfico
+elast2016ag1 = data.frame(t(matrizelasts2016ag1))
+elast2016ag1 <- rownames_to_column(elast2016ag1, var = "modelo")
+grafag1blp <- baseagregada %>% filter(ano_ref == 2016)
+grafag1blp <- merge(elast2016ag1,grafag1blp,by.x = "modelo")
+grafag1blp <- data.frame(modelo = grafag1blp$modelo, sj = grafag1blp$sj, egolblp = grafag1blp$GOL)
+# tirando o gol
+grafag1blp <- filter(grafag1blp, modelo != "GOL")
+```
+```{r, fig.width = 6, fig.asp = .72}
+e <- ggplot(grafag1blp, aes(x = sj, y = egolblp))
+e + geom_point() + ggtitle("Figura A3: elasticidades 2016 - modelo sem tempo") + xlab("Market share") + ylab("Elasticidade do gol - BLP") 
+```
+```{r, blpcmg1}
+# AGREGADA - ref código: https://cran.r-project.org/web/packages/BLPestimatoR/vignettes/blp_intro.html
+market_id <- ag1blp_data$parameters$market_id
+nmkt <- length(unique(market_id))
+markups <- numeric(length(market_id))
+sh <- infoag1$shares
+prices_pre <- ag1blp_data$data$X_lin[, "precodef"]
+indices <- ag1blp_data$parameters$market_id == (1)
+shares <- infoag1$shares[indices]
+prices <- ag1blp_data$data$X_lin[, "precodef"][indices]
+scalar <- matrix(1 / shares) %*% matrix(prices, nrow = 1)
+derivatives <-  matrizelasts2016ag1 / scalar
+own_pre <- as.matrix(ag1blp_data$data$additional_data[, c("marca.1","marca.2", "marca.3","marca.4","marca.5","marca.6","marca.7","marca.8", "marca.9","marca.10","marca.11","marca.12","marca.13", 
+"marca.14","marca.15","marca.16","marca.17")])[indices, ] 
+own_prod_pre <- own_pre %*% t(own_pre)
+markups <- -solve(t(derivatives) * own_prod_pre, shares)
+custosag1 <- prices - markups
+names(custosag1) <- names(markups)
+```
+```{r, cmgagblptabela1, echo=FALSE}
+# tabela CUSTO AGREGADA
+cmgblpag = as.data.frame(custosag1)
+cmgblpag = rownames_to_column(cmgblpag)
+precosag <- baseagregada %>% filter(ano_ref == 2016)
+markupblpabs = rownames_to_column(as.data.frame(markups))
+cmgblpag = merge(cmgblpag,markupblpabs)
+cmgblpag <- cmgblpag %>%  
+rename(modelo = rowname)
+cmgblpag = merge(cmgblpag,precosag)
+cmgblpag$markuprelblp = (cmgblpag$precodef - cmgblpag$custosag1)/cmgblpag$precodef
+cmgblpag = data.frame(modelo = cmgblpag$modelo,cmgblp = cmgblpag$custosag1,markupabs = cmgblpag$markups,markuprel =cmgblpag$markuprelblp)
+cmgblpag <- cmgblpag[order(cmgblpag$markuprel),]
+kbl(cmgblpag,col.names = c("Modelo","Custo marginal","Markup absoluto","Markup relativo"), caption = "Estimativas sem indicadora temporal BLP de custo marginal e markups para os modelos agregados em 2016",row.names = FALSE) %>% kable_styling(latex_options = "HOLD_position")
+```
+\section{Referências}
+Berry, Steven, Levinsohn, James and Pakes, Ariel, (1995), Automobile Prices in Market Equilibrium, Econometrica, 63, issue 4, p. 841-90, https://EconPapers.repec.org/RePEc:ecm:emetrp:v:63:y:1995:i:4:p:841-90.
+Bresnahan, Timothy, (1987), Competition and Collusion in the American Automobile Industry: The 1955 Price War, Journal of Industrial Economics, 35, issue 4, p. 457-82, https://EconPapers.repec.org/RePEc:bla:jindec:v:35:y:1987:i:4:p:457-82.
+
