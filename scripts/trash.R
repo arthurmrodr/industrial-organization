@@ -79,3 +79,55 @@ initial_pars <- c(-0.5, 2, 0.1, 0.1, 0.8, 0.01, 0.15, 0.08, -0.5, -0.01, 0.01, -
 sol <- optim(initial_pars, likelihood_gpt, .data = df, method = "BFGS", hessian = TRUE)
 sol <- mle(minuslogl = likelihood, start = rep(0,times = 19))
 se <- sqrt(diag(solve(sol$hessian)))
+
+
+conditional_decile_table <- db_tire %>%
+  group_by(n_agg) %>%             # Group by the 'n_agg' variable
+  mutate(decile = ntile(tpop, 10)) %>%  # Calculate deciles for 'tpop'
+  group_by(n_agg, decile) %>%    # Group by 'n_agg' and decile
+  summarise(
+    decile_start = min(tpop),    # Calculate the min tpop in the decile
+    decile_end = max(tpop),      # Calculate the max tpop in the decile
+    decile_count = n()           # Calculate the count in the decile
+  ) %>%
+  ungroup()
+
+
+conditional_decile_table <- db_tire %>%
+  group_by(n_agg) %>%
+  mutate(decile = ntile(tpop, 10)) %>%
+  ungroup()
+conditional_decile_table <- conditional_decile_table %>%
+  pivot_wider(names_from = decile, values_from = tpop)
+colnames(conditional_decile_table) <- c("n_agg", paste0("dec", 1:10))
+print(conditional_decile_table)
+
+
+db_tire %>%
+  group_by(n_agg) %>%
+  mutate(decile = ntile(tpop, 10)) %>%
+  ungroup()
+
+result_table <- db_tire %>%
+  group_by(n_agg) %>%
+  summarize(
+    decile_10 = quantile(tpop, 0.1),
+    decile_20 = quantile(tpop, 0.2),
+    decile_30 = quantile(tpop, 0.3),
+    decile_40 = quantile(tpop, 0.4),
+    decile_50 = quantile(tpop, 0.5),
+    decile_60 = quantile(tpop, 0.6),
+    decile_70 = quantile(tpop, 0.7),
+    decile_80 = quantile(tpop, 0.8),
+    decile_90 = quantile(tpop, 0.9)
+  ) %>%
+  ungroup()
+
+
+db_tire %>% 
+  mutate(n = ifelse(n >= 8, "8+", n)) %>% 
+  ggplot(aes(x = factor(n), y = tpop)) +
+  geom_boxplot() + 
+  xlab("Número de Revendedores") +
+  ylab("População") +
+  theme_bw()
