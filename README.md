@@ -1,1 +1,3 @@
-test test
+# Industrial Organization (ECO2601) - PUC/Rio
+
+This repository contains all my material from the graduate coursework in Industrial Organization I took during my Economics MsC in Pontifícia Universidade Católica do Rio de Janeiro (PUC/Rio). The PDFs of the problem set questions are available in 'problem-sets'. My answers in PDF are in the same folder, with their LaTeX code in 'problem-sets/latex-code' and R code that generated all figures and tables in 'scripts'. Problem Set 1 is about discrete choice demand models (IV logit, BLP), Problem Set 2 encompasses firm entry models (Bresnaham and Reiss, Seim) and Problem Set 3 includes dynamics (BBL, Value Function iteration). Most of the material is in Portuguese.
